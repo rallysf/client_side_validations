@@ -23,9 +23,24 @@ module ClientSideValidations::ActionView::Helpers
       end
 
       @validators = {}
+
       # Order matters here. Rails mutates the options object
-      script = client_side_form_settings(object, options)
+      html_id = options[:html][:id] if options[:html]
       form   = super(record_or_name_or_array, *(args << options), &proc)
+      options[:id] = html_id if html_id
+      script = client_side_form_settings(object, options)
+
+      # Populate @validators hash
+      if @validators
+        options[:validators].each do |key, value|
+          if @validators.key?(key)
+            @validators[key].merge! value
+          else
+            @validators[key] = value
+          end
+        end
+      end
+
       # Because of the load order requirement above this sub is necessary
       # Would be nice to not do this
       script = insert_validators_into_script(script)
@@ -39,12 +54,6 @@ module ClientSideValidations::ActionView::Helpers
     def apply_form_for_options!(object_or_array, options)
       super
       options[:html][:validate] = true if options[:validate]
-    end
-
-    def fields_for(record_or_name_or_array, *args, &block)
-      output = super
-      @validators.merge!(args.last[:validators]) if @validators
-      output
     end
 
     private
