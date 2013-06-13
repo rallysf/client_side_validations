@@ -73,8 +73,8 @@ module ClientSideValidations::ActionView::Helpers
       if options[:validate]
         builder = options[:builder] || ActionView::Base.default_form_builder
 
-        if options[:html] && options[:html][:id]
-          var_name = options[:html][:id]
+        if options[:id]
+          var_name = options[:id]
         else
           var_name = if object.respond_to?(:persisted?) && object.persisted?
             options[:as] ? "#{options[:as]}_edit" : dom_id(object, :edit)
