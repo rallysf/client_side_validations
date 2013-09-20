@@ -31,6 +31,8 @@ $.fn.isValid = (validators) ->
   obj = $(@[0])
   if obj.is('form')
     validateForm(obj, validators)
+  else if this.length > 1 and $(this).first().is("input[type=radio]")
+    validateRadioButton(obj, validators)
   else
     validateElement(obj, validatorsFor(@[0].name, validators))
 
@@ -44,14 +46,47 @@ validateForm = (form, validators) ->
   valid = true
   form.find(ClientSideValidations.selectors.validate_inputs).each ->
     valid = false unless $(@).isValid(validators)
-    # we don't want the loop to break out by mistake
-    true
+
+  radioButtons = form.find('[data-validate]:input[type=radio]')
+  if radioButtons
+    groupedRadioButtons = _.groupBy(radioButtons, (button) -> $(button).attr("name") )
+    _.each groupedRadioButtons, (buttonGroup, name) ->
+      if !$(buttonGroup).isValid(validators, true)
+        valid = false
 
   if valid then form.trigger('form:validate:pass.ClientSideValidations') else form.trigger('form:validate:fail.ClientSideValidations')
 
   form.trigger('form:validate:after.ClientSideValidations')
   valid
 
+validateRadioButton = (elementGroup, validators) ->
+  $parentElement = $(elementGroup).first().parents(":not(label)").first()
+  name = $(elementGroup).first().attr("name")
+  $parentElement.trigger('element:validate:before')
+
+  valid = true
+
+  if _.contains(_.keys(validators[name]), "presence")
+    valid = _.reduce(elementGroup, (memo, button) ->
+      memo || $(button).is(":checked")
+    , false)
+    if !valid
+      message = validators[name]["presence"].message
+      $parentElement.trigger('element:validate:fail', message).data('valid', false)
+  else if _.contains(_.keys(validators[name]), "inclusion")
+    valid = _.reduce(elementGroup, (memo, button) ->
+      memo || $(button).is(":checked") && _.contains(_.values(validators[name]["inclusion"]["in"]), $(button).val())
+    , false)
+    if !valid
+      message = validators[name]["inclusion"].message
+      $parentElement.trigger('element:validate:fail', message).data('valid', false)
+  if valid
+    # TODO: might want to set validity on all elements in the group (if one is not valid, none are)
+    $parentElement.data('valid', null)
+    $parentElement.trigger('element:validate:pass')
+
+  $parentElement.trigger('element:validate:after')
+  !!$parentElement.data('valid')
 validateElement = (element, validators) ->
   element.trigger('element:validate:before.ClientSideValidations')
 
@@ -152,8 +187,33 @@ window.ClientSideValidations.enablers =
       'form:validate:pass.ClientSideValidations'  : (eventData) -> ClientSideValidations.callbacks.form.pass(  $form, eventData)
     }
 
+
     $form.find(ClientSideValidations.selectors.inputs).each ->
       ClientSideValidations.enablers.input(@)
+
+    radioButtonGroups = _.groupBy($form.find('[data-validate="true"]input[type=radio]'), (button) -> $(button).attr("name") )
+    _.each radioButtonGroups, (radioButtonGroup, name) ->
+      commonParentSelector = "#" + $(radioButtonGroup).first().parents(":not(label)").first().prop("id")
+      if commonParentSelector.length > 0
+        $form.on 'element:validate:after.ClientSideValidations', commonParentSelector, (eventData) ->
+          ClientSideValidations.callbacks.element.after($(@), eventData)
+
+        $form.on 'element:validate:before.ClientSideValidations', commonParentSelector, (eventData) ->
+          ClientSideValidations.callbacks.element.before($(@), eventData)
+
+        $form.on 'element:validate:fail.ClientSideValidations', commonParentSelector, (eventData, message) ->
+          element = $(@)
+
+          ClientSideValidations.callbacks.element.fail(element, message, ->
+            $form.ClientSideValidations.addError(element, message)
+          , eventData)
+
+        $form.on 'element:validate:pass.ClientSideValidations', commonParentSelector, (eventData) ->
+          element = $(@)
+
+          ClientSideValidations.callbacks.element.pass(element, ->
+            $form.ClientSideValidations.removeError(element)
+          , eventData)
 
   input: (input) ->
     $input = $(input)
