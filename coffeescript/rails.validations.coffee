@@ -62,31 +62,33 @@ validateForm = (form, validators) ->
 validateRadioButton = (elementGroup, validators) ->
   $parentElement = $(elementGroup).first().parents(":not(label)").first()
   name = $(elementGroup).first().attr("name")
-  $parentElement.trigger('element:validate:before')
-
+  $parentElement.trigger('element:validate:before.ClientSideValidations')
+  options = validators[name]
   valid = true
 
-  if _.contains(_.keys(validators[name]), "presence")
+  if "presence" in _.keys(options)
     valid = _.reduce(elementGroup, (memo, button) ->
       memo || $(button).is(":checked")
     , false)
     if !valid
       message = validators[name]["presence"].message
-      $parentElement.trigger('element:validate:fail', message).data('valid', false)
-  else if _.contains(_.keys(validators[name]), "inclusion")
-    valid = _.reduce(elementGroup, (memo, button) ->
-      memo || $(button).is(":checked") && _.contains(_.values(validators[name]["inclusion"]["in"]), $(button).val())
-    , false)
+      $parentElement.trigger('element:validate:fail.ClientSideValidations', message).data('valid', false)
+  else if "inclusion" in _.keys(options)
+    elementOptions = options["inclusion"][0]
+    # every checked button is contained and 
+    validRadioButtons = (button for button in elementGroup when $(button).is(":checked") and $(button).val() in elementOptions.in)
+    valid = validRadioButtons.length == elementGroup.length
     if !valid
-      message = validators[name]["inclusion"].message
-      $parentElement.trigger('element:validate:fail', message).data('valid', false)
+      message = elementOptions.message
+      $parentElement.trigger('element:validate:fail.ClientSideValidations', message).data('valid', false)
   if valid
     # TODO: might want to set validity on all elements in the group (if one is not valid, none are)
     $parentElement.data('valid', null)
-    $parentElement.trigger('element:validate:pass')
+    $parentElement.trigger('element:validate:pass.ClientSideValidations')
 
-  $parentElement.trigger('element:validate:after')
-  !!$parentElement.data('valid')
+  $parentElement.trigger('element:validate:after.ClientSideValidations')
+  $parentElement.data('valid') != false
+
 validateElement = (element, validators) ->
   element.trigger('element:validate:before.ClientSideValidations')
 
@@ -205,14 +207,14 @@ window.ClientSideValidations.enablers =
           element = $(@)
 
           ClientSideValidations.callbacks.element.fail(element, message, ->
-            $form.ClientSideValidations.addError(element, message)
+            form.ClientSideValidations.addError(element, message)
           , eventData)
 
         $form.on 'element:validate:pass.ClientSideValidations', commonParentSelector, (eventData) ->
           element = $(@)
 
           ClientSideValidations.callbacks.element.pass(element, ->
-            $form.ClientSideValidations.removeError(element)
+            form.ClientSideValidations.removeError(element)
           , eventData)
 
   input: (input) ->
