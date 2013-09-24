@@ -502,6 +502,11 @@ window.ClientSideValidations.formBuilders =
           inputErrorField.replaceWith(element)
           label.detach()
           labelErrorField.replaceWith(label)
+    'NestedForm::Builder':
+      add: (element, settings, message) ->
+        ClientSideValidations.formBuilders['ActionView::Helpers::FormBuilder'].add(element, settings, message)
+      remove: (element, settings, message) ->
+        ClientSideValidations.formBuilders['ActionView::Helpers::FormBuilder'].remove(element, settings, message)
 
 window.ClientSideValidations.patterns =
     numericality: /^(-|\+)?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d*)?$/

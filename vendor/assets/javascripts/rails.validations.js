@@ -689,6 +689,14 @@
           return labelErrorField.replaceWith(label);
         }
       }
+    },
+    'NestedForm::Builder': {
+      add: function(element, settings, message) {
+        return ClientSideValidations.formBuilders['ActionView::Helpers::FormBuilder'].add(element, settings, message);
+      },
+      remove: function(element, settings, message) {
+        return ClientSideValidations.formBuilders['ActionView::Helpers::FormBuilder'].remove(element, settings, message);
+      }
     }
   };
 
