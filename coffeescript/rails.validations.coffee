@@ -473,11 +473,11 @@ window.ClientSideValidations.disableValidators = () ->
 window.ClientSideValidations.formBuilders =
     'ActionView::Helpers::FormBuilder':
       add: (element, settings, message) ->
-        form = $(element[0].form)
+        form = $(element[0]).parents("form").first()
         if element.data('valid') != false and not form.find("label.message[for='#{element.attr('id')}']")[0]?
           inputErrorField = jQuery(settings.input_tag)
           labelErrorField = jQuery(settings.label_tag)
-          label = form.find("label[for='#{element.attr('id')}']:not(.message)")
+          label = form.find("label[for='#{element.attr('id')}']:not(.message)").last()
 
           element.attr('autofocus', false) if element.attr('autofocus')
 
@@ -491,10 +491,10 @@ window.ClientSideValidations.formBuilders =
         form.find("label.message[for='#{element.attr('id')}']").text(message)
 
       remove: (element, settings) ->
-        form = $(element[0].form)
+        form = $(element[0]).parents("form").first()
         errorFieldClass = jQuery(settings.input_tag).attr('class')
         inputErrorField = element.closest(".#{errorFieldClass.replace(" ", ".")}")
-        label = form.find("label[for='#{element.attr('id')}']:not(.message)")
+        label = form.find("label[for='#{element.attr('id')}']:not(.message)").last()
         labelErrorField = label.closest(".#{errorFieldClass}")
 
         if inputErrorField[0]

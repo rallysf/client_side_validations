@@ -81,34 +81,45 @@
   };
 
   validateRadioButton = function(elementGroup, validators) {
-    var $parentElement, message, name, valid;
+    var $parentElement, button, elementOptions, message, name, options, valid, validRadioButtons;
     $parentElement = $(elementGroup).first().parents(":not(label)").first();
     name = $(elementGroup).first().attr("name");
-    $parentElement.trigger('element:validate:before');
+    $parentElement.trigger('element:validate:before.ClientSideValidations');
+    options = validators[name];
     valid = true;
-    if (_.contains(_.keys(validators[name]), "presence")) {
+    if (__indexOf.call(_.keys(options), "presence") >= 0) {
       valid = _.reduce(elementGroup, function(memo, button) {
         return memo || $(button).is(":checked");
       }, false);
       if (!valid) {
         message = validators[name]["presence"].message;
-        $parentElement.trigger('element:validate:fail', message).data('valid', false);
+        $parentElement.trigger('element:validate:fail.ClientSideValidations', message).data('valid', false);
       }
-    } else if (_.contains(_.keys(validators[name]), "inclusion")) {
-      valid = _.reduce(elementGroup, function(memo, button) {
-        return memo || $(button).is(":checked") && _.contains(_.values(validators[name]["inclusion"]["in"]), $(button).val());
-      }, false);
+    } else if (__indexOf.call(_.keys(options), "inclusion") >= 0) {
+      elementOptions = options["inclusion"][0];
+      validRadioButtons = (function() {
+        var _i, _len, _ref, _results;
+        _results = [];
+        for (_i = 0, _len = elementGroup.length; _i < _len; _i++) {
+          button = elementGroup[_i];
+          if ($(button).is(":checked") && (_ref = $(button).val(), __indexOf.call(elementOptions["in"], _ref) >= 0)) {
+            _results.push(button);
+          }
+        }
+        return _results;
+      })();
+      valid = validRadioButtons.length === elementGroup.length;
       if (!valid) {
-        message = validators[name]["inclusion"].message;
-        $parentElement.trigger('element:validate:fail', message).data('valid', false);
+        message = elementOptions.message;
+        $parentElement.trigger('element:validate:fail.ClientSideValidations', message).data('valid', false);
       }
     }
     if (valid) {
       $parentElement.data('valid', null);
-      $parentElement.trigger('element:validate:pass');
+      $parentElement.trigger('element:validate:pass.ClientSideValidations');
     }
-    $parentElement.trigger('element:validate:after');
-    return !!$parentElement.data('valid');
+    $parentElement.trigger('element:validate:after.ClientSideValidations');
+    return $parentElement.data('valid') !== false;
   };
 
   validateElement = function(element, validators) {
@@ -263,14 +274,14 @@
             var element;
             element = $(this);
             return ClientSideValidations.callbacks.element.fail(element, message, function() {
-              return $form.ClientSideValidations.addError(element, message);
+              return form.ClientSideValidations.addError(element, message);
             }, eventData);
           });
           return $form.on('element:validate:pass.ClientSideValidations', commonParentSelector, function(eventData) {
             var element;
             element = $(this);
             return ClientSideValidations.callbacks.element.pass(element, function() {
-              return $form.ClientSideValidations.removeError(element);
+              return form.ClientSideValidations.removeError(element);
             }, eventData);
           });
         }
@@ -647,11 +658,11 @@
     'ActionView::Helpers::FormBuilder': {
       add: function(element, settings, message) {
         var form, inputErrorField, label, labelErrorField;
-        form = $(element[0].form);
+        form = $(element[0]).parents("form").first();
         if (element.data('valid') !== false && (form.find("label.message[for='" + (element.attr('id')) + "']")[0] == null)) {
           inputErrorField = jQuery(settings.input_tag);
           labelErrorField = jQuery(settings.label_tag);
-          label = form.find("label[for='" + (element.attr('id')) + "']:not(.message)");
+          label = form.find("label[for='" + (element.attr('id')) + "']:not(.message)").last();
           if (element.attr('autofocus')) {
             element.attr('autofocus', false);
           }
@@ -666,10 +677,10 @@
       },
       remove: function(element, settings) {
         var errorFieldClass, form, inputErrorField, label, labelErrorField;
-        form = $(element[0].form);
+        form = $(element[0]).parents("form").first();
         errorFieldClass = jQuery(settings.input_tag).attr('class');
         inputErrorField = element.closest("." + (errorFieldClass.replace(" ", ".")));
-        label = form.find("label[for='" + (element.attr('id')) + "']:not(.message)");
+        label = form.find("label[for='" + (element.attr('id')) + "']:not(.message)").last();
         labelErrorField = label.closest("." + errorFieldClass);
         if (inputErrorField[0]) {
           inputErrorField.find("#" + (element.attr('id'))).detach();
