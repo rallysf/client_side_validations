@@ -27,14 +27,14 @@ $.fn.validate = ->
     $(@).enableClientSideValidations()
   @
 
-$.fn.isValid = (validators) ->
+$.fn.isValid = (validators, options = {}) ->
   obj = $(@[0])
   if obj.is('form')
     validateForm(obj, validators)
   else if this.length > 1 and $(this).first().is("input[type=radio]")
-    validateRadioButton(obj, validators)
+    validateRadioButton(this, validators)
   else
-    validateElement(obj, validatorsFor(@[0].name, validators))
+    validateElement(obj, validatorsFor(@[0].name, validators), options)
 
 validatorsFor = (name, validators) ->
   name = name.replace(/_attributes\]\[\w+\]\[(\w+)\]/g, "_attributes][][$1]")
@@ -77,7 +77,7 @@ validateRadioButton = (elementGroup, validators) ->
     elementOptions = options["inclusion"][0]
     # every checked button is contained and 
     validRadioButtons = (button for button in elementGroup when $(button).is(":checked") and $(button).val() in elementOptions.in)
-    valid = validRadioButtons.length == elementGroup.length
+    valid = validRadioButtons.length > 0
     if !valid
       message = elementOptions.message
       $parentElement.trigger('element:validate:fail.ClientSideValidations', message).data('valid', false)
@@ -89,7 +89,7 @@ validateRadioButton = (elementGroup, validators) ->
   $parentElement.trigger('element:validate:after.ClientSideValidations')
   $parentElement.data('valid') != false
 
-validateElement = (element, validators) ->
+validateElement = (element, validators, options = {}) ->
   element.trigger('element:validate:before.ClientSideValidations')
 
   passElement = ->
@@ -104,16 +104,12 @@ validateElement = (element, validators) ->
 
   executeValidators = (context) ->
     valid = true
-
     for kind, fn of context
       if validators[kind]
         for validator in validators[kind]
           if message = fn.call(context, element, validator)
             valid = failElement(message)
             break
-        unless valid
-          break
-
     valid
 
   # if _destroy for this input group == "1" pass with flying colours, it'll get deleted anyway..
@@ -123,17 +119,17 @@ validateElement = (element, validators) ->
     return afterValidate()
 
   # if the value hasn't changed since last validation, do nothing
-  unless element.data('changed') != false
+  if element.data('changed') == false
     return afterValidate()
 
-  element.data('changed', false)
 
   local  = ClientSideValidations.validators.local
   remote = ClientSideValidations.validators.remote
 
-  if executeValidators(local) and executeValidators(remote)
-    passElement()
-
+  if element.data("changed") != false && (element.data("used") || options["forceUnused"] || element.parent().hasClass("error"))
+    element.data('changed', false)
+    if executeValidators(local) != false and executeValidators(remote) != false
+      passElement()
   afterValidate()
 
 if window.ClientSideValidations == undefined
@@ -179,9 +175,13 @@ window.ClientSideValidations.enablers =
     # Set up the events for the form
     $form.on(event, binding) for event, binding of {
       'submit.ClientSideValidations'              : (eventData) ->
-        unless $form.isValid(form.ClientSideValidations.settings.validators)
+        if !$form.isValid(form.ClientSideValidations.settings.validators)
           eventData.preventDefault()
           eventData.stopImmediatePropagation()
+          false
+        else if $form.data("toggle-validations", false)
+          $form.data("enable-validations", false)
+          true
       'ajax:beforeSend.ClientSideValidations'     : (eventData) -> $form.isValid(form.ClientSideValidations.settings.validators) if eventData.target == @
       'form:validate:after.ClientSideValidations' : (eventData) -> ClientSideValidations.callbacks.form.after( $form, eventData)
       'form:validate:before.ClientSideValidations': (eventData) -> ClientSideValidations.callbacks.form.before($form, eventData)
@@ -227,8 +227,26 @@ window.ClientSideValidations.enablers =
         $(@).attr('data-validate', true)
       .on(event, binding) for event, binding of {
         'focusout.ClientSideValidations': ->
-          $(@).isValid(form.ClientSideValidations.settings.validators)
-        'change.ClientSideValidations':   -> $(@).data('changed', true)
+          validationsDisabled = $form.data("enable-validations") == false
+          blurDisabled = $form.data("blur-validation-disabled") == true
+          return if validationsDisabled || blurDisabled
+          $(@).data('used', true).isValid(form.ClientSideValidations.settings.validators)
+        'change.ClientSideValidations': ->
+          return if $form.data("enable-validations") == false
+          if $(@).is("select, input[type=checkbox]")
+            $(@).data('changed', true).isValid(form.ClientSideValidations.settings.validators)
+        'keyup.ClientSideValidations': ->
+          return if $form.data("enable-validations") == false
+          inputName = $(@).prop("name")
+          inputValidators = form.ClientSideValidations.settings.validators[inputName]
+          localValidators = {}
+          localValidators[inputName] = $.extend({}, inputValidators)
+          localValidators[inputName]["uniqueness"] = null
+          localValidators[inputName]["vanity_uniqueness"] = null # yuck
+          if localValidators[inputName].length != 0
+            $(@).data("changed", true).isValid(localValidators)
+          if inputValidators && (inputValidators.uniqueness || inputValidators.vanity_uniqueness)
+            $(@).data("changed", true)
         # Callbacks
         'element:validate:after.ClientSideValidations':  (eventData) -> ClientSideValidations.callbacks.element.after($(@),  eventData)
         'element:validate:before.ClientSideValidations': (eventData) -> ClientSideValidations.callbacks.element.before($(@), eventData)
@@ -472,36 +490,54 @@ window.ClientSideValidations.disableValidators = () ->
 
 window.ClientSideValidations.formBuilders =
     'ActionView::Helpers::FormBuilder':
+      focus : (element) ->
+        focusCallback = ->
+          elemLen = element.val().length
+          element.focus()
+          if document.selection
+            oSel = document.selection.createRange()
+            oSel.moveStart('character', -elemLen)
+            oSel.moveStart('character', elemLen)
+            oSel.moveEnd('character', 0)
+            oSel.select()
+        setTimeout focusCallback, 10
       add: (element, settings, message) ->
         form = $(element[0]).parents("form").first()
         if element.data('valid') != false and not form.find("label.message[for='#{element.attr('id')}']")[0]?
           inputErrorField = jQuery(settings.input_tag)
           labelErrorField = jQuery(settings.label_tag)
           label = form.find("label[for='#{element.attr('id')}']:not(.message)").last()
-
-          element.attr('autofocus', false) if element.attr('autofocus')
-
+          focusedElement = $(document.activeElement)
+          unless label.has(element).length > 0
+            labelErrorField.insertAfter(label)
+            labelErrorField.find('label#label_tag').replaceWith(label)
+            element.data("labelErrorField", labelErrorField)
+          element.prop('autofocus', false) if element.prop('autofocus')
           element.before(inputErrorField)
           inputErrorField.find('span#input_tag').replaceWith(element)
-          inputErrorField.find('label.message').attr('for', element.attr('id'))
-          labelErrorField.find('label.message').attr('for', element.attr('id'))
-          labelErrorField.insertAfter(label)
-          labelErrorField.find('label#label_tag').replaceWith(label)
+          inputErrorField.find('label.message').prop('for', element.prop('id'))
+          element.data("inputErrorField", inputErrorField)
+          @.focus(focusedElement)
 
-        form.find("label.message[for='#{element.attr('id')}']").text(message)
+        form.find("label.message[for='#{element.prop('id')}']").text(message)
 
       remove: (element, settings) ->
-        form = $(element[0]).parents("form").first()
-        errorFieldClass = jQuery(settings.input_tag).attr('class')
-        inputErrorField = element.closest(".#{errorFieldClass.replace(" ", ".")}")
-        label = form.find("label[for='#{element.attr('id')}']:not(.message)").last()
-        labelErrorField = label.closest(".#{errorFieldClass}")
-
-        if inputErrorField[0]
-          inputErrorField.find("##{element.attr('id')}").detach()
+        form = element.parents("form").first()
+        errorFieldClass = jQuery(settings.input_tag).prop('class')
+        errorSelector = ".#{errorFieldClass.replace(" ", ".")}"
+        inputErrorField = element.data("inputErrorField") || element.parents(errorSelector).first()
+        labelErrorField = element.data("labelErrorField")
+        focusedElement = $(document.activeElement)
+        if inputErrorField && inputErrorField.length > 0
+          element.detach()
           inputErrorField.replaceWith(element)
+          element.data("inputErrorField", null)
+          @.focus(focusedElement)
+        if labelErrorField && labelErrorField.length > 0
+          label = form.find("label[for='#{element.prop('id')}']:not(.message)").last()
           label.detach()
           labelErrorField.replaceWith(label)
+          element.data("labelErrorField", null)
     'NestedForm::Builder':
       add: (element, settings, message) ->
         ClientSideValidations.formBuilders['ActionView::Helpers::FormBuilder'].add(element, settings, message)

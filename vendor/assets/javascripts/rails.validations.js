@@ -34,15 +34,18 @@
     return this;
   };
 
-  $.fn.isValid = function(validators) {
+  $.fn.isValid = function(validators, options) {
     var obj;
+    if (options == null) {
+      options = {};
+    }
     obj = $(this[0]);
     if (obj.is('form')) {
       return validateForm(obj, validators);
     } else if (this.length > 1 && $(this).first().is("input[type=radio]")) {
-      return validateRadioButton(obj, validators);
+      return validateRadioButton(this, validators);
     } else {
-      return validateElement(obj, validatorsFor(this[0].name, validators));
+      return validateElement(obj, validatorsFor(this[0].name, validators), options);
     }
   };
 
@@ -108,7 +111,7 @@
         }
         return _results;
       })();
-      valid = validRadioButtons.length === elementGroup.length;
+      valid = validRadioButtons.length > 0;
       if (!valid) {
         message = elementOptions.message;
         $parentElement.trigger('element:validate:fail.ClientSideValidations', message).data('valid', false);
@@ -122,8 +125,11 @@
     return $parentElement.data('valid') !== false;
   };
 
-  validateElement = function(element, validators) {
+  validateElement = function(element, validators, options) {
     var afterValidate, destroyInputName, executeValidators, failElement, local, passElement, remote;
+    if (options == null) {
+      options = {};
+    }
     element.trigger('element:validate:before.ClientSideValidations');
     passElement = function() {
       return element.trigger('element:validate:pass.ClientSideValidations').data('valid', null);
@@ -149,9 +155,6 @@
               break;
             }
           }
-          if (!valid) {
-            break;
-          }
         }
       }
       return valid;
@@ -164,11 +167,13 @@
     if (element.data('changed') === false) {
       return afterValidate();
     }
-    element.data('changed', false);
     local = ClientSideValidations.validators.local;
     remote = ClientSideValidations.validators.remote;
-    if (executeValidators(local) && executeValidators(remote)) {
-      passElement();
+    if (element.data("changed") !== false && (element.data("used") || options["forceUnused"] || element.parent().hasClass("error"))) {
+      element.data('changed', false);
+      if (executeValidators(local) !== false && executeValidators(remote) !== false) {
+        passElement();
+      }
     }
     return afterValidate();
   };
@@ -229,7 +234,11 @@
         'submit.ClientSideValidations': function(eventData) {
           if (!$form.isValid(form.ClientSideValidations.settings.validators)) {
             eventData.preventDefault();
-            return eventData.stopImmediatePropagation();
+            eventData.stopImmediatePropagation();
+            return false;
+          } else if ($form.data("toggle-validations", false)) {
+            $form.data("enable-validations", false);
+            return true;
           }
         },
         'ajax:beforeSend.ClientSideValidations': function(eventData) {
@@ -294,10 +303,39 @@
       $form = $(form);
       _ref = {
         'focusout.ClientSideValidations': function() {
-          return $(this).isValid(form.ClientSideValidations.settings.validators);
+          var blurDisabled, validationsDisabled;
+          validationsDisabled = $form.data("enable-validations") === false;
+          blurDisabled = $form.data("blur-validation-disabled") === true;
+          if (validationsDisabled || blurDisabled) {
+            return;
+          }
+          return $(this).data('used', true).isValid(form.ClientSideValidations.settings.validators);
         },
         'change.ClientSideValidations': function() {
-          return $(this).data('changed', true);
+          if ($form.data("enable-validations") === false) {
+            return;
+          }
+          if ($(this).is("select, input[type=checkbox]")) {
+            return $(this).data('changed', true).isValid(form.ClientSideValidations.settings.validators);
+          }
+        },
+        'keyup.ClientSideValidations': function() {
+          var inputName, inputValidators, localValidators;
+          if ($form.data("enable-validations") === false) {
+            return;
+          }
+          inputName = $(this).prop("name");
+          inputValidators = form.ClientSideValidations.settings.validators[inputName];
+          localValidators = {};
+          localValidators[inputName] = $.extend({}, inputValidators);
+          localValidators[inputName]["uniqueness"] = null;
+          localValidators[inputName]["vanity_uniqueness"] = null;
+          if (localValidators[inputName].length !== 0) {
+            $(this).data("changed", true).isValid(localValidators);
+          }
+          if (inputValidators && (inputValidators.uniqueness || inputValidators.vanity_uniqueness)) {
+            return $(this).data("changed", true);
+          }
         },
         'element:validate:after.ClientSideValidations': function(eventData) {
           return ClientSideValidations.callbacks.element.after($(this), eventData);
@@ -656,37 +694,65 @@
 
   window.ClientSideValidations.formBuilders = {
     'ActionView::Helpers::FormBuilder': {
+      focus: function(element) {
+        var focusCallback;
+        focusCallback = function() {
+          var elemLen, oSel;
+          elemLen = element.val().length;
+          element.focus();
+          if (document.selection) {
+            oSel = document.selection.createRange();
+            oSel.moveStart('character', -elemLen);
+            oSel.moveStart('character', elemLen);
+            oSel.moveEnd('character', 0);
+            return oSel.select();
+          }
+        };
+        return setTimeout(focusCallback, 10);
+      },
       add: function(element, settings, message) {
-        var form, inputErrorField, label, labelErrorField;
+        var focusedElement, form, inputErrorField, label, labelErrorField;
         form = $(element[0]).parents("form").first();
         if (element.data('valid') !== false && (form.find("label.message[for='" + (element.attr('id')) + "']")[0] == null)) {
           inputErrorField = jQuery(settings.input_tag);
           labelErrorField = jQuery(settings.label_tag);
           label = form.find("label[for='" + (element.attr('id')) + "']:not(.message)").last();
-          if (element.attr('autofocus')) {
-            element.attr('autofocus', false);
+          focusedElement = $(document.activeElement);
+          if (!(label.has(element).length > 0)) {
+            labelErrorField.insertAfter(label);
+            labelErrorField.find('label#label_tag').replaceWith(label);
+            element.data("labelErrorField", labelErrorField);
+          }
+          if (element.prop('autofocus')) {
+            element.prop('autofocus', false);
           }
           element.before(inputErrorField);
           inputErrorField.find('span#input_tag').replaceWith(element);
-          inputErrorField.find('label.message').attr('for', element.attr('id'));
-          labelErrorField.find('label.message').attr('for', element.attr('id'));
-          labelErrorField.insertAfter(label);
-          labelErrorField.find('label#label_tag').replaceWith(label);
+          inputErrorField.find('label.message').prop('for', element.prop('id'));
+          element.data("inputErrorField", inputErrorField);
+          this.focus(focusedElement);
         }
-        return form.find("label.message[for='" + (element.attr('id')) + "']").text(message);
+        return form.find("label.message[for='" + (element.prop('id')) + "']").text(message);
       },
       remove: function(element, settings) {
-        var errorFieldClass, form, inputErrorField, label, labelErrorField;
-        form = $(element[0]).parents("form").first();
-        errorFieldClass = jQuery(settings.input_tag).attr('class');
-        inputErrorField = element.closest("." + (errorFieldClass.replace(" ", ".")));
-        label = form.find("label[for='" + (element.attr('id')) + "']:not(.message)").last();
-        labelErrorField = label.closest("." + errorFieldClass);
-        if (inputErrorField[0]) {
-          inputErrorField.find("#" + (element.attr('id'))).detach();
+        var errorFieldClass, errorSelector, focusedElement, form, inputErrorField, label, labelErrorField;
+        form = element.parents("form").first();
+        errorFieldClass = jQuery(settings.input_tag).prop('class');
+        errorSelector = "." + (errorFieldClass.replace(" ", "."));
+        inputErrorField = element.data("inputErrorField") || element.parents(errorSelector).first();
+        labelErrorField = element.data("labelErrorField");
+        focusedElement = $(document.activeElement);
+        if (inputErrorField && inputErrorField.length > 0) {
+          element.detach();
           inputErrorField.replaceWith(element);
+          element.data("inputErrorField", null);
+          this.focus(focusedElement);
+        }
+        if (labelErrorField && labelErrorField.length > 0) {
+          label = form.find("label[for='" + (element.prop('id')) + "']:not(.message)").last();
           label.detach();
-          return labelErrorField.replaceWith(label);
+          labelErrorField.replaceWith(label);
+          return element.data("labelErrorField", null);
         }
       }
     },
