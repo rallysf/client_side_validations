@@ -91,13 +91,10 @@
     options = validators[name];
     valid = true;
     if (__indexOf.call(_.keys(options), "presence") >= 0) {
+      elementOptions = options["presence"][0];
       valid = _.reduce(elementGroup, function(memo, button) {
         return memo || $(button).is(":checked");
       }, false);
-      if (!valid) {
-        message = validators[name]["presence"].message;
-        $parentElement.trigger('element:validate:fail.ClientSideValidations', message).data('valid', false);
-      }
     } else if (__indexOf.call(_.keys(options), "inclusion") >= 0) {
       elementOptions = options["inclusion"][0];
       validRadioButtons = (function() {
@@ -112,14 +109,13 @@
         return _results;
       })();
       valid = validRadioButtons.length > 0;
-      if (!valid) {
-        message = elementOptions.message;
-        $parentElement.trigger('element:validate:fail.ClientSideValidations', message).data('valid', false);
-      }
     }
     if (valid) {
       $parentElement.data('valid', null);
       $parentElement.trigger('element:validate:pass.ClientSideValidations');
+    } else {
+      message = elementOptions.message;
+      $parentElement.trigger('element:validate:fail.ClientSideValidations', message).data('valid', false);
     }
     $parentElement.trigger('element:validate:after.ClientSideValidations');
     return $parentElement.data('valid') !== false;
@@ -132,14 +128,17 @@
     }
     element.trigger('element:validate:before.ClientSideValidations');
     passElement = function() {
-      return element.trigger('element:validate:pass.ClientSideValidations').data('valid', null);
+      element.trigger('element:validate:pass.ClientSideValidations');
+      return element.data('valid', null);
     };
     failElement = function(message) {
-      element.trigger('element:validate:fail.ClientSideValidations', message).data('valid', false);
+      element.trigger('element:validate:fail.ClientSideValidations', message);
+      element.data('valid', false);
       return false;
     };
     afterValidate = function() {
-      return element.trigger('element:validate:after.ClientSideValidations').data('valid') !== false;
+      element.trigger('element:validate:after.ClientSideValidations');
+      return element.data('valid') !== false;
     };
     executeValidators = function(context) {
       var fn, kind, message, valid, validator, _i, _len, _ref;

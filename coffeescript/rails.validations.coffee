@@ -67,24 +67,23 @@ validateRadioButton = (elementGroup, validators) ->
   valid = true
 
   if "presence" in _.keys(options)
+    elementOptions = options["presence"][0]
     valid = _.reduce(elementGroup, (memo, button) ->
       memo || $(button).is(":checked")
     , false)
-    if !valid
-      message = validators[name]["presence"].message
-      $parentElement.trigger('element:validate:fail.ClientSideValidations', message).data('valid', false)
   else if "inclusion" in _.keys(options)
     elementOptions = options["inclusion"][0]
     # every checked button is contained and 
     validRadioButtons = (button for button in elementGroup when $(button).is(":checked") and $(button).val() in elementOptions.in)
     valid = validRadioButtons.length > 0
-    if !valid
-      message = elementOptions.message
-      $parentElement.trigger('element:validate:fail.ClientSideValidations', message).data('valid', false)
+
   if valid
     # TODO: might want to set validity on all elements in the group (if one is not valid, none are)
     $parentElement.data('valid', null)
     $parentElement.trigger('element:validate:pass.ClientSideValidations')
+  else
+    message = elementOptions.message
+    $parentElement.trigger('element:validate:fail.ClientSideValidations', message).data('valid', false)
 
   $parentElement.trigger('element:validate:after.ClientSideValidations')
   $parentElement.data('valid') != false
@@ -93,14 +92,17 @@ validateElement = (element, validators, options = {}) ->
   element.trigger('element:validate:before.ClientSideValidations')
 
   passElement = ->
-    element.trigger('element:validate:pass.ClientSideValidations').data('valid', null)
+    element.trigger('element:validate:pass.ClientSideValidations')
+    element.data('valid', null)
 
   failElement = (message) ->
-    element.trigger('element:validate:fail.ClientSideValidations', message).data('valid', false)
+    element.trigger('element:validate:fail.ClientSideValidations', message)
+    element.data('valid', false)
     false
 
   afterValidate = ->
-    element.trigger('element:validate:after.ClientSideValidations').data('valid') != false
+    element.trigger('element:validate:after.ClientSideValidations')
+    element.data('valid') != false
 
   executeValidators = (context) ->
     valid = true
