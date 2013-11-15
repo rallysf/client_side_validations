@@ -142,7 +142,7 @@ if window.ClientSideValidations.forms == undefined
 
 window.ClientSideValidations.selectors =
   inputs: ':input:not(button):not([type="submit"])[name]:visible:enabled'
-  validate_inputs: ':input:enabled:visible[data-validate]'
+  validate_inputs: ':input:enabled:visible[data-validate][name]'
   forms:  'form[data-validate]'
 
 window.ClientSideValidations.reset = (form) ->
